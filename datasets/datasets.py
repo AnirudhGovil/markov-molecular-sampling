@@ -1,9 +1,16 @@
+
+'''
+Module for loading datasets
+'''
 import dgl
 import torch
 from torch.utils import data
 
 
 class GraphDataset(data.Dataset):
+    '''
+    Class for loading the GraphDataset
+    '''
     def __init__(self, graphs):
         self.graphs = graphs
 
@@ -18,7 +25,11 @@ class GraphDataset(data.Dataset):
         g = dgl.batch(batch)
         return g
 
+
 class GraphClassificationDataset(GraphDataset):
+    '''
+    Class for the classification dataset
+    '''
     def __init__(self, graphs, labels):
         '''
         @params:
@@ -40,7 +51,11 @@ class GraphClassificationDataset(GraphDataset):
         labels = torch.tensor(labels).long()
         return g, labels
 
+
 class ImitationDataset(GraphDataset):
+    '''
+    Class for the imitation learning dataset
+    '''
     def __init__(self, graphs, edits):
         '''
         @params:
@@ -61,14 +76,14 @@ class ImitationDataset(GraphDataset):
         for key in self.edits.keys():
             targ[key] = self.edits[key][index]
         return self.graphs[index], targ
-    
+
     def merge_(self, dataset):
         if not isinstance(dataset, ImitationDataset):
             dataset = ImitationDataset.reconstruct(dataset)
         self.graphs += dataset.graphs
         for key in self.edits.keys():
             self.edits[key] += dataset.edits[key]
-        
+
     @staticmethod
     def reconstruct(dataset):
         graphs, edits = ImitationDataset.collate_fn(
@@ -78,12 +93,13 @@ class ImitationDataset(GraphDataset):
     @staticmethod
     def collate_fn(batch, tensorize=True):
         graphs, targs_list = list(zip(*batch))
-        if tensorize: graphs = dgl.batch(graphs)
+        if tensorize:
+            graphs = dgl.batch(graphs)
 
         edits = {}
         for key in targs_list[0].keys():
             edits[key] = [t[key] for t in targs_list]
-            if tensorize: edits[key] = \
-                torch.tensor(edits[key]).long() # (batch_size,)
+            if tensorize:
+                edits[key] = \
+                    torch.tensor(edits[key]).long()  # (batch_size,)
         return graphs, edits
-    

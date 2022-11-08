@@ -1,30 +1,32 @@
+'''
+Module for sampling from a distribution.
+'''
 import os
-import math
-import torch
 import random
 import logging as log
-from tqdm import tqdm
+import torch
 from rdkit.Chem import AllChem
 from rdkit import Chem, DataStructs
 from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
 
 from .common.train import train
-from .common.chem import mol_to_dgl
 from .common.utils import print_mols
-from .datasets.utils import load_mols
-from .datasets.datasets import ImitationDataset, \
-                               GraphClassificationDataset
+from .datasets.datasets import ImitationDataset
+
 
 class Sampler():
+    '''
+    Class methods for sampling
+    '''
     def __init__(self, config, proposal, estimator):
         self.proposal = proposal
         self.estimator = estimator
-        
+
         self.writer = None
         self.run_dir = None
-        
-        ### for sampling
+
+        # for sampling
         self.step = None
         self.PATIENCE = 100
         self.patience = None
@@ -36,17 +38,21 @@ class Sampler():
         self.num_step = config['num_step']
         self.log_every = config['log_every']
         self.batch_size = config['batch_size']
-        self.score_wght = {k: v for k, v in zip(config['objectives'], config['score_wght'])}
-        self.score_succ = {k: v for k, v in zip(config['objectives'], config['score_succ'])}
-        self.score_clip = {k: v for k, v in zip(config['objectives'], config['score_clip'])}
-        self.fps_ref = [AllChem.GetMorganFingerprintAsBitVect(x, 3, 2048) 
-                        for x in config['mols_ref']] if config['mols_ref'] else None
+        self.score_wght = {k: v for k, v in zip(
+            config['objectives'], config['score_wght'])}
+        self.score_succ = {k: v for k, v in zip(
+            config['objectives'], config['score_succ'])}
+        self.score_clip = {k: v for k, v in zip(
+            config['objectives'], config['score_clip'])}
+        self.fps_ref = [AllChem.GetMorganFingerprintAsBitVect(
+            x, 3, 2048) for x in config['mols_ref']] if config['mols_ref'] else None
 
-        ### for training editor
+        # for training editor
         if self.train:
             self.dataset = None
             self.DATASET_MAX_SIZE = config['dataset_size']
-            self.optimizer = torch.optim.Adam(self.proposal.editor.parameters(), lr=config['lr'])
+            self.optimizer = torch.optim.Adam(
+                self.proposal.editor.parameters(), lr=config['lr'])
 
     def scores_from_dicts(self, dicts):
         '''
@@ -69,14 +75,14 @@ class Sampler():
         return scores
 
     def record(self, step, old_mols, old_dicts, acc_rates):
-        ### average score and size
+        # average score and size
         old_scores = self.scores_from_dicts(old_dicts)
         avg_score = 1. * sum(old_scores) / len(old_scores)
         sizes = [mol.GetNumAtoms() for mol in old_mols]
         avg_size = sum(sizes) / len(old_mols)
         self.last_avg_size = avg_size
 
-        ### successful rate and uniqueness
+        # successful rate and uniqueness
         fps_mols, unique = [], set()
         success_dict = {k: 0. for k in old_dicts[0].keys()}
         success, novelty, diversity = 0., 0., 0.
@@ -85,7 +91,8 @@ class Sampler():
             for k, v in score_dict.items():
                 if v >= self.score_succ[k]:
                     success_dict[k] += 1.
-                else: all_success = False
+                else:
+                    all_success = False
             success += all_success
             if all_success:
                 fps_mols.append(old_mols[i])
@@ -97,16 +104,18 @@ class Sampler():
         ### novelty and diversity
         fps_mols = [AllChem.GetMorganFingerprintAsBitVect(
             x, 3, 2048) for x in fps_mols]
-        
+
         if self.fps_ref:
             n_sim = 0.
             for i in range(len(fps_mols)):
                 sims = DataStructs.BulkTanimotoSimilarity(
                     fps_mols[i], self.fps_ref)
-                if max(sims) >= 0.4: n_sim += 1
+                if max(sims) >= 0.4:
+                    n_sim += 1
             novelty = 1. - 1. * n_sim / (len(fps_mols) + 1e-6)
-        else: novelty = 1.
-        
+        else:
+            novelty = 1.
+
         similarity = 0.
         for i in range(len(fps_mols)):
             sims = DataStructs.BulkTanimotoSimilarity(
@@ -115,7 +124,7 @@ class Sampler():
         n = len(fps_mols)
         n_pairs = n * (n - 1) / 2
         diversity = 1 - similarity / (n_pairs + 1e-6)
-        
+
         diversity = min(diversity, 1.)
         novelty = min(novelty, 1.)
         evaluation = {
@@ -126,7 +135,7 @@ class Sampler():
             'prod': success * novelty * diversity
         }
 
-        ### logging and writing tensorboard
+        # logging and writing tensorboard
         log.info('Step: {:02d},\tScore: {:.7f}'.format(step, avg_score))
         self.writer.add_scalar('score_avg', avg_score, step)
         self.writer.add_scalar('size_avg', avg_size, step)
@@ -138,16 +147,16 @@ class Sampler():
             scores = [score_dict[k] for score_dict in old_dicts]
             self.writer.add_histogram(k, torch.tensor(scores), step)
         print_mols(self.run_dir, step, old_mols, old_scores, old_dicts)
-        
-        ### early stop
-        if evaluation['prod'] > .1 and evaluation['prod'] < self.best_eval_res  + .01 and \
-                    avg_score > .1 and          avg_score < self.best_avg_score + .01:
+
+        # early stop
+        if evaluation['prod'] > .1 and evaluation['prod'] < self.best_eval_res + .01 and \
+                avg_score > .1 and avg_score < self.best_avg_score + .01:
             self.patience -= 1
-        else: 
+        else:
             self.patience = self.PATIENCE
-            self.best_eval_res  = max(self.best_eval_res, evaluation['prod'])
+            self.best_eval_res = max(self.best_eval_res, evaluation['prod'])
             self.best_avg_score = max(self.best_avg_score, avg_score)
-        
+
     def acc_rates(self, new_scores, old_scores, fixings):
         '''
         compute sampling acceptance rates
@@ -166,8 +175,8 @@ class Sampler():
         '''
         self.run_dir = run_dir
         self.writer = SummaryWriter(log_dir=run_dir)
-        
-        ### sample
+
+        # sample
         old_mols = [mol for mol in mols_init]
         old_dicts = self.estimator.get_scores(old_mols)
         old_scores = self.scores_from_dicts(old_dicts)
@@ -175,39 +184,44 @@ class Sampler():
         self.record(-1, old_mols, old_dicts, acc_rates)
 
         for step in range(self.num_step):
-            if self.patience <= 0: break
+            if self.patience <= 0:
+                break
             self.step = step
-            new_mols, fixings = self.proposal.propose(old_mols) 
+            new_mols, fixings = self.proposal.propose(old_mols)
             new_dicts = self.estimator.get_scores(new_mols)
             new_scores = self.scores_from_dicts(new_dicts)
-            
-            indices = [i for i in range(len(old_mols)) if new_scores[i] > old_scores[i]]
+
+            indices = [i for i in range(
+                len(old_mols)) if new_scores[i] > old_scores[i]]
             with open(os.path.join(self.run_dir, 'edits.txt'), 'a') as f:
                 f.write('edits at step %i\n' % step)
                 f.write('improve\tact\tarm\n')
                 for i, item in enumerate(self.proposal.dataset):
                     _, edit = item
                     improve = new_scores[i] > old_scores[i]
-                    f.write('%i\t%i\t%i\n' % (improve, edit['act'], edit['arm']))
-            
+                    f.write('%i\t%i\t%i\n' %
+                            (improve, edit['act'], edit['arm']))
+
             acc_rates = self.acc_rates(new_scores, old_scores, fixings)
             acc_rates = [min(1., max(0., A)) for A in acc_rates]
             for i in range(self.num_mols):
-                A = acc_rates[i] # A = p(x') * g(x|x') / p(x) / g(x'|x)
-                if random.random() > A: continue
+                A = acc_rates[i]  # A = p(x') * g(x|x') / p(x) / g(x'|x)
+                if random.random() > A:
+                    continue
                 old_mols[i] = new_mols[i]
                 old_scores[i] = new_scores[i]
                 old_dicts[i] = new_dicts[i]
             if step % self.log_every == 0:
                 self.record(step, old_mols, old_dicts, acc_rates)
 
-            ### train editor
+            # train editor
             if self.train:
                 dataset = self.proposal.dataset
                 dataset = data.Subset(dataset, indices)
-                if self.dataset: 
+                if self.dataset:
                     self.dataset.merge_(dataset)
-                else: self.dataset = ImitationDataset.reconstruct(dataset)
+                else:
+                    self.dataset = ImitationDataset.reconstruct(dataset)
                 n_sample = len(self.dataset)
                 if n_sample > 2 * self.DATASET_MAX_SIZE:
                     indices = [i for i in range(n_sample)]
@@ -216,33 +230,37 @@ class Sampler():
                     self.dataset = data.Subset(self.dataset, indices)
                     self.dataset = ImitationDataset.reconstruct(self.dataset)
                 batch_size = int(self.batch_size * 20 / self.last_avg_size)
-                log.info('formed a imitation dataset of size %i' % len(self.dataset))
+                log.info('formed a imitation dataset of size %i' %
+                         len(self.dataset))
                 loader = data.DataLoader(self.dataset,
-                    batch_size=batch_size, shuffle=True,
-                    collate_fn=ImitationDataset.collate_fn
-                )
-                
+                                         batch_size=batch_size, shuffle=True,
+                                         collate_fn=ImitationDataset.collate_fn
+                                         )
+
                 train(
-                    model=self.proposal.editor, 
-                    loaders={'dev': loader}, 
+                    model=self.proposal.editor,
+                    loaders={'dev': loader},
                     optimizer=self.optimizer,
                     n_epoch=1,
                     log_every=10,
                     max_step=25,
                     metrics=[
-                        'loss', 
+                        'loss',
                         'loss_del', 'prob_del',
                         'loss_add', 'prob_add',
                         'loss_arm', 'prob_arm'
                     ]
                 )
-                
+
                 if not self.proposal.editor.device == \
-                    torch.device('cpu'):
+                        torch.device('cpu'):
                     torch.cuda.empty_cache()
 
 
 class Sampler_SA(Sampler):
+    '''
+    Sampler with simulated annealing
+    '''
     def __init__(self, config, proposal, estimator):
         super().__init__(config, proposal, estimator)
         self.k = 0
@@ -251,10 +269,10 @@ class Sampler_SA(Sampler):
 
     @staticmethod
     def T_k(k):
-        T_0 = 1. #.1
+        T_0 = 1.  # .1
         BETA = .05
         ALPHA = .95
-        
+
         # return 1. * T_0 / (math.log(k + 1) + 1e-6)
         # return max(1e-6, T_0 - k * BETA)
         return ALPHA ** k * T_0
@@ -265,10 +283,11 @@ class Sampler_SA(Sampler):
             self.k += 1
             self.step_cur_T = 0
             self.T = Sampler_SA.T_k(self.k)
-        else: self.step_cur_T += 1
+        else:
+            self.step_cur_T += 1
         self.T = max(self.T, 1e-2)
         return self.T
-        
+
     def acc_rates(self, new_scores, old_scores, fixings):
         acc_rates = []
         T = self.update_T()
@@ -282,10 +301,13 @@ class Sampler_SA(Sampler):
 
 
 class Sampler_MH(Sampler):
+    '''
+    Class for Metropolis-Hastings sampling
+    '''
     def __init__(self, config, proposal, estimator):
         super().__init__(config, proposal, estimator)
         self.power = 30.
-        
+
     def acc_rates(self, new_scores, old_scores, fixings):
         acc_rates = []
         for i in range(self.num_mols):
@@ -293,16 +315,18 @@ class Sampler_MH(Sampler):
             A = ((new_scores[i] / old_score) ** self.power) * fixings[i]
             acc_rates.append(A)
         return acc_rates
-    
+
 
 class Sampler_Recursive(Sampler):
+    '''
+    Class for recursive sampling
+    '''
     def __init__(self, config, proposal, estimator):
         super().__init__(config, proposal, estimator)
-        
+
     def acc_rates(self, new_scores, old_scores, fixings):
         acc_rates = []
         for i in range(self.num_mols):
             A = 1.
             acc_rates.append(A)
         return acc_rates
-

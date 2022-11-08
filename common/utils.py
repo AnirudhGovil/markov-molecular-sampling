@@ -4,6 +4,7 @@ from rdkit import Chem
 
 from .chem import standardize_smiles
 
+
 class Recorder():
     def __init__(self, metrics):
         self.metrics = metrics
@@ -32,8 +33,8 @@ class Recorder():
             avg = summ / self.n_records
             metric2avg[metric] = avg
         return metric2avg
-    
-    
+
+
 def print_mols(run_dir, step, mols, scores, dicts):
     path = os.path.join(run_dir, 'mols.txt')
     with open(path, 'a') as f:
@@ -48,20 +49,21 @@ def print_mols(run_dir, step, mols, scores, dicts):
                 smiles = Chem.MolToSmiles(mol)
                 target_scores = [dicts[i][name] for name in names]
             except Exception:
-                score = 0. 
+                score = 0.
                 smiles = '[INVALID]'
                 assert False
                 target_scores = [0. for _ in names]
             target_scores = ['%f' % _ for _ in target_scores]
             f.write('%f\t%s\t%s\n' % (score, '\t'.join(target_scores), smiles))
 
-            
+
 def subsample(cnts, r=1e-5, k=.7):
     summ = sum(cnts)
     freq = [1. * c / summ for c in cnts]
-    cnts = [min((r / f) ** k, 1.) * c \
-        for c, f in zip(cnts, freq)]
+    cnts = [min((r / f) ** k, 1.) * c
+            for c, f in zip(cnts, freq)]
     return cnts
+
 
 def fussy(weights, f=0.):
     if len(weights) == 0:
@@ -72,12 +74,13 @@ def fussy(weights, f=0.):
     elif isinstance(weights[0], list):
         for i in range(len(weights)):
             weights[i] = fussy(weights[i], f)
-    else: raise NotImplementedError
+    else:
+        raise NotImplementedError
     return weights
+
 
 def sample_idx(weights):
     indices = list(range(len(weights)))
     idx = random.choices(indices,
-        weights=weights, k=1)[0]
+                         weights=weights, k=1)[0]
     return idx
-

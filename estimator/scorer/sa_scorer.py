@@ -16,6 +16,9 @@
 #
 # peter ertl & greg landrum, september 2013
 #
+'''
+This modile provides a function to calculate the synthetic accessibility score
+'''
 from __future__ import print_function
 
 import math

@@ -1,8 +1,10 @@
+'''
+This module is used to score the kinase challenge.
+'''
 import os
 import pickle
 import numpy as np
 from rdkit import Chem, RDLogger
-from sklearn.ensemble._forest import ForestClassifier, ForestRegressor
 
 from ...common.chem import fingerprints_from_mol
 
@@ -15,24 +17,28 @@ TASKS = ['gsk3b', 'jnk3']
 SPLITS = ['val', 'dev']
 
 models = {}
+
+
 def load_model(task):
     with open(os.path.join(ROOT_DIR, 'kinase_rf/%s.pkl' % task), 'rb') as f:
         models[task] = pickle.load(f, encoding='iso-8859-1')
+
 
 def get_scores(task, mols):
     model = models.get(task)
     if model is None:
         load_model(task)
         model = models[task]
-        
+
     fps = [fingerprints_from_mol(mol) for mol in mols]
     fps = np.stack(fps, axis=0)
     scores = models[task].predict_proba(fps)
-    scores = scores[:,1].tolist()
+    scores = scores[:, 1].tolist()
     return scores
 
+
 if __name__ == '__main__':
-    ### load data
+    # load data
     with open(os.path.join(ROOT_DIR, 'kinase.tsv'), 'r') as f:
         lines = f.readlines()[2:]
         lines = [line.strip('\n').split('\t') for line in lines]
@@ -56,14 +62,14 @@ if __name__ == '__main__':
             continue
         fp = fingerprints_from_mol(mol)
 
-        task = target[i] # gsk3b or jnk
+        task = target[i]  # gsk3b or jnk
         split = SPLITS[is_train[i]]
         subset = '%s_%s' % (task, split)
         data['%s_X' % subset].append(fp)
         data['%s_y' % subset].append(is_activate[i])
     print('invalid smiles count: %i' % smiles_none_cnt)
 
-    ### predict
+    # predict
     for task in TASKS:
         for split in SPLITS:
             subset = '%s_%s' % (task, split)

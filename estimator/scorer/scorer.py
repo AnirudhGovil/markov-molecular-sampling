@@ -1,65 +1,72 @@
-# modifed from: https://github.com/wengong-jin/hgraph2graph/blob/master/props/properties.py
-
+# modifed from:
+# https://github.com/wengong-jin/hgraph2graph/blob/master/props/properties.py
+'''
+This module gets the scores for the molecules.
+'''
 import math
-import rdkit
-from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem
+from rdkit import Chem
 from rdkit.Chem import Descriptors
 import rdkit.Chem.QED as QED
 import networkx as nx
 
 from ...common.chem import standardize_smiles
-from . import sa_scorer, kinase_scorer #, drd2_scorer, chemprop_scorer
+from . import sa_scorer, kinase_scorer  # , drd2_scorer, chemprop_scorer
 
-### get scores
+# get scores
+
+
 def get_scores(objective, mols):
     mols = [standardize_smiles(mol) for mol in mols]
     mols_valid = [mol for mol in mols if mol is not None]
-    
+
     if objective == 'drd2':
         scores = drd2_scorer.get_scores(mols_valid)
     elif objective == 'jnk3' or objective == 'gsk3b':
         scores = kinase_scorer.get_scores(objective, mols_valid)
     elif objective.startswith('chemprop'):
         scores = chemprop_scorer.get_scores(objective, mols_valid)
-    else: scores = [get_score(objective, mol) for mol in mols_valid]
-        
+    else:
+        scores = [get_score(objective, mol) for mol in mols_valid]
+
     scores = [scores.pop(0) if mol is not None else 0. for mol in mols]
     return scores
 
+
 def get_score(objective, mol):
     try:
-        if objective == 'qed': 
+        if objective == 'qed':
             return QED.qed(mol)
-        elif objective == 'sa': 
+        elif objective == 'sa':
             x = sa_scorer.calculateScore(mol)
-            return (10. - x) / 9. # normalized to [0, 1]
-        elif objective == 'mw': # molecular weight
+            return (10. - x) / 9.  # normalized to [0, 1]
+        elif objective == 'mw':  # molecular weight
             return mw(mol)
-        elif objective == 'logp': # real number
+        elif objective == 'logp':  # real number
             return Descriptors.MolLogP(mol)
         elif objective == 'penalized_logp':
             return penalized_logp(mol)
         elif 'rand' in objective:
             raise NotImplementedError
             # return rand_scorer.get_score(objective, mol)
-        else: raise NotImplementedError
+        else:
+            raise NotImplementedError
     except ValueError:
         return 0.
 
-    
-### molecular properties
+
+# molecular properties
 def mw(mol):
     '''
     molecular weight estimation from qed
     '''
     x = Descriptors.MolWt(mol)
     a, b, c, d, e, f = 2.817, 392.575, 290.749, 2.420, 49.223, 65.371
-    g = math.exp(-(x - c + d/2) / e)
-    h = math.exp(-(x - c - d/2) / f)
+    g = math.exp(-(x - c + d / 2) / e)
+    h = math.exp(-(x - c - d / 2) / f)
     x = a + b / (1 + g) * (1 - 1 / (1 + h))
     return x / 104.981
-    
+
+
 def penalized_logp(mol):
     # Modified from https://github.com/bowenliu16/rl_graph_generation
     logP_mean = 2.4570953396190123
@@ -73,7 +80,8 @@ def penalized_logp(mol):
     SA = -sa_scorer.calculateScore(mol)
 
     # cycle score
-    cycle_list = nx.cycle_basis(nx.Graph(Chem.rdmolops.GetAdjacencyMatrix(mol)))
+    cycle_list = nx.cycle_basis(
+        nx.Graph(Chem.rdmolops.GetAdjacencyMatrix(mol)))
     if len(cycle_list) == 0:
         cycle_length = 0
     else:

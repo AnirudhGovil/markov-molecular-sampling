@@ -13,26 +13,30 @@ lg.setLevel(RDLogger.CRITICAL)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir',   type=str,   default='MARS/data')
+    parser.add_argument('--data_dir', type=str, default='MARS/data')
     # parser.add_argument('--mols_file',  type=str,   default='chembl.txt')
-    parser.add_argument('--mols_file',  type=str,   default='custom.txt')
-    parser.add_argument('--vocab_name', type=str,   default='chembl',)
-    parser.add_argument('--max_size',   type=int,   default=10, help='max size of arm')
+    parser.add_argument('--mols_file', type=str, default='custom.txt')
+    parser.add_argument('--vocab_name', type=str, default='chembl',)
+    parser.add_argument('--max_size', type=int,
+                        default=10, help='max size of arm')
     args = parser.parse_args()
 
-    ### load data
+    # load data
     mols = load_mols(args.data_dir, args.mols_file)
 
-    ### drop arms
+    # drop arms
     arms, cnts, smiles2idx = [], [], {}
     for mol in tqdm(mols):
         for bond in mol.GetBonds():
             u = bond.GetBeginAtomIdx()
             v = bond.GetEndAtomIdx()
             if not bond.GetBondType() == \
-                Chem.rdchem.BondType.SINGLE: continue
-            try: skeleton, arm = break_bond(mol, u, v)
-            except ValueError: continue
+                    Chem.rdchem.BondType.SINGLE:
+                continue
+            try:
+                skeleton, arm = break_bond(mol, u, v)
+            except ValueError:
+                continue
 
             for reverse in [False, True]:
                 if reverse is True:
@@ -43,32 +47,38 @@ if __name__ == '__main__':
                 # functional group check
                 mark = False
                 if not skeleton.mol.GetAtomWithIdx(
-                    skeleton.u).GetAtomicNum() == 6: continue
-                if arm.mol.GetNumAtoms() > args.max_size: continue
+                        skeleton.u).GetAtomicNum() == 6:
+                    continue
+                if arm.mol.GetNumAtoms() > args.max_size:
+                    continue
                 for atom in arm.mol.GetAtoms():
                     if not atom.GetAtomicNum() == 6:
                         mark = True
                         break
                 for bond in arm.mol.GetBonds():
-                    if mark: break
+                    if mark:
+                        break
                     if bond.GetBondType() == \
-                        Chem.rdchem.BondType.DOUBLE or \
-                        bond.GetBondType() == \
-                        Chem.rdchem.BondType.TRIPLE:
+                            Chem.rdchem.BondType.DOUBLE or \
+                            bond.GetBondType() == \
+                            Chem.rdchem.BondType.TRIPLE:
                         mark = True
                         break
-                if not mark: continue
+                if not mark:
+                    continue
 
                 smiles = Chem.MolToSmiles(arm.mol, rootedAtAtom=arm.v)
-                if smiles.startswith('CC'): continue
+                if smiles.startswith('CC'):
+                    continue
                 if smiles2idx.get(smiles) is None:
                     smiles2idx[smiles] = len(arms)
                     arms.append(arm)
                     cnts.append(1)
-                else: cnts[smiles2idx[smiles]] += 1
+                else:
+                    cnts[smiles2idx[smiles]] += 1
 
-    ### save arms
-    idx2smiles = {idx : smiles for smiles, idx in smiles2idx.items()}
+    # save arms
+    idx2smiles = {idx: smiles for smiles, idx in smiles2idx.items()}
     indices = sorted(range(len(cnts)), key=lambda i: cnts[i], reverse=True)
     arms = [arms[i] for i in indices]
     cnts = [cnts[i] for i in indices]
@@ -80,4 +90,3 @@ if __name__ == '__main__':
         for i, cnt in zip(indices, cnts):
             smiles = idx2smiles[i]
             f.write('%i\t%s\n' % (cnt, smiles))
-    

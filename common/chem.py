@@ -1,15 +1,17 @@
-import dgl
-import math
+'''
+Module for checking the validity of molecules.
+'''
 import copy
-import rdkit
+from collections import defaultdict
+import dgl
 import torch
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs
-from collections import defaultdict
 
 
-### validity
+
+# validity
 def standardize_smiles(mol):
     try:
         smiles = Chem.MolToSmiles(mol)
@@ -18,14 +20,17 @@ def standardize_smiles(mol):
     except Exception:
         return None
 
+
 def check_validity(mol):
     """
     Checks that no atoms in the mol have exceeded their possible
     valency
     :return: True if no valency issues, False otherwise
     """
-    if not isinstance(mol, Chem.Mol): return False
-    if mol.GetNumBonds() < 1: return False
+    if not isinstance(mol, Chem.Mol):
+        return False
+    if mol.GetNumBonds() < 1:
+        return False
     try:
         # Chem.SanitizeMol(mol,
         #     sanitizeOps=Chem.SanitizeFlags.SANITIZE_PROPERTIES)
@@ -38,6 +43,9 @@ def check_validity(mol):
 
 ### breaking and combination
 class Skeleton():
+    '''
+    Class for breaking and combining molecules.
+    '''
     def __init__(self, mol, u, bond_type=Chem.BondType.SINGLE):
         '''
         @params:
@@ -48,6 +56,7 @@ class Skeleton():
         self.mol = mol
         self.u = u
         self.bond_type = bond_type
+
 
 class Arm():
     def __init__(self, mol, v, bond_type=Chem.BondType.SINGLE):
@@ -60,6 +69,7 @@ class Arm():
         self.mol = mol
         self.v = v
         self.bond_type = bond_type
+
 
 def break_bond(mol, u, v):
     '''
@@ -78,27 +88,32 @@ def break_bond(mol, u, v):
     bond = mol.GetBondBetweenAtoms(u, v)
     bond_type = bond.GetBondType()
     if not bond_type == \
-        Chem.rdchem.BondType.SINGLE:
+            Chem.rdchem.BondType.SINGLE:
         raise ValueError
     mol.RemoveBond(u, v)
 
     mapping = []
-    frags = list(Chem.rdmolops.GetMolFrags(mol,
-        asMols=True, fragsMolAtomMapping=mapping))
+    frags = list(
+        Chem.rdmolops.GetMolFrags(
+            mol,
+            asMols=True,
+            fragsMolAtomMapping=mapping))
     mapping = [list(m) for m in mapping]
-    if not len(frags) == 2: raise ValueError
+    if not len(frags) == 2:
+        raise ValueError
     if u not in mapping[0]:
         mapping = [mapping[1], mapping[0]]
         frags = [frags[1], frags[0]]
 
     # re-index
-    u = mapping[0].index(u) 
+    u = mapping[0].index(u)
     v = mapping[1].index(v)
-    
+
     # standardizing frags will cause wrong indexing for u and v
     skeleton = Skeleton(frags[0], u, bond_type)
     arm = Arm(frags[1], v, bond_type)
     return skeleton, arm
+
 
 def combine(skeleton, arm):
     '''
@@ -115,12 +130,13 @@ def combine(skeleton, arm):
     return mol.GetMol()
 
 
-### data transformation
+# data transformation
 def fingerprints_from_mol(mol):
     fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, 1024)
     nfp = np.zeros((0, ), dtype=np.int8)
     DataStructs.ConvertToNumpyArray(fp, nfp)
     return nfp
+
 
 def mol_to_dgl(mol):
     '''
@@ -138,6 +154,7 @@ def mol_to_dgl(mol):
         Chem.rdchem.HybridizationType.SP2,
         Chem.rdchem.HybridizationType.SP3
     ]
+
     def zinc_nodes(mol):
         atom_feats_dict = defaultdict(list)
         num_atoms = mol.GetNumAtoms()
@@ -154,7 +171,7 @@ def mol_to_dgl(mol):
 
             h_u = []
             h_u += [
-                int(symbol == x) 
+                int(symbol == x)
                 for x in ATOM_TYPES
             ]
             h_u.append(atom_type)
@@ -167,11 +184,14 @@ def mol_to_dgl(mol):
             h_u.append(num_h)
             atom_feats_dict['n_feat'].append(torch.FloatTensor(h_u))
 
-        atom_feats_dict['n_feat'] = torch.stack(atom_feats_dict['n_feat'], dim=0)
-        atom_feats_dict['node_type'] = torch.LongTensor(atom_feats_dict['node_type'])
-        atom_feats_dict['node_charge'] = torch.LongTensor(atom_feats_dict['node_charge'])
+        atom_feats_dict['n_feat'] = torch.stack(
+            atom_feats_dict['n_feat'], dim=0)
+        atom_feats_dict['node_type'] = torch.LongTensor(
+            atom_feats_dict['node_type'])
+        atom_feats_dict['node_charge'] = torch.LongTensor(
+            atom_feats_dict['node_charge'])
         return atom_feats_dict
-    
+
     num_atoms = mol.GetNumAtoms()
     atom_feats = zinc_nodes(mol)
     g.add_nodes(num=num_atoms, data=atom_feats)
@@ -182,16 +202,20 @@ def mol_to_dgl(mol):
         Chem.rdchem.BondType.DOUBLE,
         Chem.rdchem.BondType.TRIPLE,
         Chem.rdchem.BondType.AROMATIC, None]
+
     def zinc_edges(mol, edges, self_loop=False):
         bond_feats_dict = defaultdict(list)
         edges = [idxs.tolist() for idxs in edges]
         for e in range(len(edges[0])):
             u, v = edges[0][e], edges[1][e]
-            if u == v and not self_loop: continue
+            if u == v and not self_loop:
+                continue
 
             e_uv = mol.GetBondBetweenAtoms(u, v)
-            if e_uv is None: bond_type = None
-            else: bond_type = e_uv.GetBondType()
+            if e_uv is None:
+                bond_type = None
+            else:
+                bond_type = e_uv.GetBondType()
             bond_feats_dict['e_feat'].append([
                 float(bond_type == x)
                 for x in BOND_TYPES
@@ -200,7 +224,7 @@ def mol_to_dgl(mol):
         bond_feats_dict['e_feat'] = torch.FloatTensor(
             bond_feats_dict['e_feat'])
         return bond_feats_dict
-    
+
     bond_feats = []
     for bond in mol.GetBonds():
         u = bond.GetBeginAtomIdx()
