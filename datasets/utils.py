@@ -58,6 +58,9 @@ class Vocab():
 
 def load_vocab(data_dir, profix, vocab_size=200):
     vocab_dir = os.path.join(data_dir, 'vocab_%s' % profix)
+
+    print(os.path.join(vocab_dir, 'arms.pkl'))
+    
     with open(os.path.join(vocab_dir, 'arms.pkl'), 'rb') as f:
         arms = pickle.load(f)
         arms = arms[:vocab_size]

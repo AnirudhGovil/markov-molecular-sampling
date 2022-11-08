@@ -93,6 +93,9 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(0)
     np.random.seed(0)
 
+    print(config)
+    exit(0)
+
     # estimator
     if config['mols_ref']:
         config['mols_ref'] = \
