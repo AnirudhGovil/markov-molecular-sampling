@@ -2,6 +2,7 @@ import os
 import pickle
 import numpy as np
 from rdkit import Chem, RDLogger
+from sklearn.ensemble._forest import ForestClassifier, ForestRegressor
 
 from ...common.chem import fingerprints_from_mol
 

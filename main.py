@@ -8,6 +8,7 @@ import numpy as np
 import logging as log
 from tqdm import tqdm
 from rdkit import Chem, RDLogger
+from sklearn.ensemble._forest import ForestClassifier, ForestRegressor
 
 from .estimator.estimator import Estimator
 from .proposal.models.editor_basic import BasicEditor
@@ -34,9 +35,12 @@ if __name__ == '__main__':
     parser.add_argument('--vocab',      type=str,   default='chembl')
     parser.add_argument('--vocab_size', type=int,   default=1000)
     parser.add_argument('--max_size',   type=int,   default=40)
-    parser.add_argument('--num_mols',   type=int,   default=1000)
-    parser.add_argument('--num_step',   type=int,   default=1000)
-    parser.add_argument('--num_runs',   type=int,   default=10)
+    # parser.add_argument('--num_mols',   type=int,   default=1000)
+    # parser.add_argument('--num_step',   type=int,   default=1000)
+    # parser.add_argument('--num_runs',   type=int,   default=10)
+    parser.add_argument('--num_mols',   type=int,   default=200)
+    parser.add_argument('--num_step',   type=int,   default=20)
+    parser.add_argument('--num_runs',   type=int,   default=2)
     parser.add_argument('--log_every',  type=int,   default=1)
 
     parser.add_argument('--sampler',    type=str,   default='sa',       help='mcmc sampling algorithm')
@@ -47,7 +51,8 @@ if __name__ == '__main__':
     parser.add_argument('--score_clip', type=str,   default='  0.6, 0.6, 0.7, 0.7')
     
     parser.add_argument('--lr',             type=float, default=3e-4)
-    parser.add_argument('--dataset_size',   type=int,   default=50000)
+    # parser.add_argument('--dataset_size',   type=int,   default=50000)
+    parser.add_argument('--dataset_size',   type=int,   default=1000)
     parser.add_argument('--batch_size',     type=int,   default=128)
     parser.add_argument('--n_atom_feat',    type=int,   default=17)
     parser.add_argument('--n_bond_feat',    type=int,   default=5)
