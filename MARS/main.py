@@ -94,7 +94,7 @@ if __name__ == '__main__':
     np.random.seed(0)
 
     print(config)
-    exit(0)
+    # exit(0)
 
     # estimator
     if config['mols_ref']:
